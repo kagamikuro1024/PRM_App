@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import { computeHealthScore } from "@/lib/health-score"
 import { addDays, getNextOccasionDate, startOfDay } from "@/lib/date-utils"
 import { DashboardClient } from "./dashboard-client"
+import { seedUserData } from "@/lib/user-seed"
 
 export default async function DashboardPage() {
   const session = await auth()
@@ -14,12 +15,30 @@ export default async function DashboardPage() {
 
   const userId = session.user.id
 
-  const [contacts, reminders, recentInteractions] = await Promise.all([
-    prisma.contact.findMany({
-      where: { userId, isArchived: false },
-      include: { occasions: true },
-      orderBy: { updatedAt: "desc" },
-    }),
+  // 1. Fetch contacts first to check if they need seeding
+  let contacts = await prisma.contact.findMany({
+    where: { userId, isArchived: false },
+    include: { occasions: true },
+    orderBy: { updatedAt: "desc" },
+  })
+
+  // 2. Automatically seed data if they have 0 contacts (new signups or forced seed reset)
+  if (contacts.length === 0) {
+    try {
+      await seedUserData(userId)
+      // Re-fetch contacts after seeding is completed
+      contacts = await prisma.contact.findMany({
+        where: { userId, isArchived: false },
+        include: { occasions: true },
+        orderBy: { updatedAt: "desc" },
+      })
+    } catch (error) {
+      console.error("Failed to auto-seed contacts on dashboard load:", error)
+    }
+  }
+
+  // 3. Fetch reminders and interactions
+  const [reminders, recentInteractions] = await Promise.all([
     prisma.reminder.findMany({
       where: {
         OR: [

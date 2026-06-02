@@ -58,6 +58,16 @@ interface ContactSeedInput {
  * This only runs when the user has no contacts yet.
  */
 export async function seedUserData(userId: string): Promise<void> {
+  // Verify that the user exists in the database before seeding (safeguard for NextAuth timing)
+  const userExists = await prisma.user.findUnique({
+    where: { id: userId },
+  });
+
+  if (!userExists) {
+    console.log(`User ${userId} does not exist in database yet, skipping seed for now`);
+    return;
+  }
+
   const existingContactCount = await prisma.contact.count({
     where: { userId },
   });
@@ -481,89 +491,87 @@ export async function seedUserData(userId: string): Promise<void> {
     }
   ];
 
-  await prisma.$transaction(async (tx) => {
-    const createdContacts: Contact[] = [];
-    const urgentReminders: Contact[] = [];
+  const createdContacts: Contact[] = [];
+  const urgentReminders: Contact[] = [];
 
-    for (const c of contactsData) {
-      const createdContact = await tx.contact.create({
-        data: {
-          userId,
-          name: c.name,
-          email: c.email,
-          category: c.category,
-          strength: c.strength,
-          tags: c.tags,
-          loveLanguage: c.loveLanguage,
-          loveLanguageDetails: c.loveLanguageDetails,
-          expertiseTags: c.expertiseTags,
-          checkInFrequency: c.checkInFrequency,
-          lastContactAt: daysAgo(c.lastContactDaysAgo),
-          linkedinUrl: c.linkedinUrl || null,
-          interactions: c.interaction ? {
-            create: [
-              {
-                channel: c.interaction.channel,
-                date: daysAgo(c.interaction.daysAgo),
-                summary: c.interaction.summary,
-                mood: c.interaction.mood,
-                followUps: c.interaction.followUps,
-              }
-            ]
-          } : undefined,
-          occasions: c.occasion ? {
-            create: [
-              {
-                type: c.occasion.type,
-                date: daysFromNow(c.occasion.daysFromNow),
-                recurring: c.occasion.recurring,
-                giftPreference: c.occasion.giftPreference,
-                reminderDaysBefore: c.occasion.reminderDaysBefore,
-              }
-            ]
-          } : undefined,
-        }
-      });
-
-      createdContacts.push(createdContact);
-
-      // Check if we should create a check-in reminder (if frequency exceeded or random choice)
-      if (c.lastContactDaysAgo >= c.checkInFrequency) {
-        urgentReminders.push(createdContact);
-      }
-    }
-
-    // Create automatic check-in reminders for contacts that are overdue
-    const checkInReminderData = urgentReminders.map(c => buildCheckInReminder(c));
-    if (checkInReminderData.length > 0) {
-      await tx.reminder.createMany({
-        data: checkInReminderData,
-      });
-    }
-
-    // Add specific birthday reminders if the contact has a birthday occasion
-    for (const contact of createdContacts) {
-      const occasionInput = contactsData.find(cd => cd.name === contact.name)?.occasion;
-      if (occasionInput && (occasionInput.type === "birthday" || occasionInput.type === "work_anniversary")) {
-        const createdOccasion = await tx.occasion.findFirst({
-          where: { contactId: contact.id, type: occasionInput.type }
-        });
-
-        if (createdOccasion) {
-          await tx.reminder.create({
-            data: {
-              contactId: contact.id,
-              occasionId: createdOccasion.id,
-              type: occasionInput.type === "birthday" ? "birthday" : "custom",
-              dueDate: daysFromNow(occasionInput.daysFromNow - 1), // 1 day before the event
-              actionSuggestion: `Prepare gift/message for ${contact.name}'s upcoming ${occasionInput.type}. Prefer: ${occasionInput.giftPreference}`,
-              status: "pending",
+  for (const c of contactsData) {
+    const createdContact = await prisma.contact.create({
+      data: {
+        userId,
+        name: c.name,
+        email: c.email,
+        category: c.category,
+        strength: c.strength,
+        tags: c.tags,
+        loveLanguage: c.loveLanguage,
+        loveLanguageDetails: c.loveLanguageDetails,
+        expertiseTags: c.expertiseTags,
+        checkInFrequency: c.checkInFrequency,
+        lastContactAt: daysAgo(c.lastContactDaysAgo),
+        linkedinUrl: c.linkedinUrl || null,
+        interactions: c.interaction ? {
+          create: [
+            {
+              channel: c.interaction.channel,
+              date: daysAgo(c.interaction.daysAgo),
+              summary: c.interaction.summary,
+              mood: c.interaction.mood,
+              followUps: c.interaction.followUps,
             }
-          });
-        }
+          ]
+        } : undefined,
+        occasions: c.occasion ? {
+          create: [
+            {
+              type: c.occasion.type,
+              date: daysFromNow(c.occasion.daysFromNow),
+              recurring: c.occasion.recurring,
+              giftPreference: c.occasion.giftPreference,
+              reminderDaysBefore: c.occasion.reminderDaysBefore,
+            }
+          ]
+        } : undefined,
+      }
+    });
+
+    createdContacts.push(createdContact);
+
+    // Check if we should create a check-in reminder
+    if (c.lastContactDaysAgo >= c.checkInFrequency) {
+      urgentReminders.push(createdContact);
+    }
+  }
+
+  // Create automatic check-in reminders for contacts that are overdue
+  const checkInReminderData = urgentReminders.map(c => buildCheckInReminder(c));
+  if (checkInReminderData.length > 0) {
+    await prisma.reminder.createMany({
+      data: checkInReminderData,
+    });
+  }
+
+  // Add specific birthday reminders if the contact has a birthday occasion
+  for (const contact of createdContacts) {
+    const occasionInput = contactsData.find(cd => cd.name === contact.name)?.occasion;
+    if (occasionInput && (occasionInput.type === "birthday" || occasionInput.type === "work_anniversary")) {
+      const createdOccasion = await prisma.occasion.findFirst({
+        where: { contactId: contact.id, type: occasionInput.type }
+      });
+
+      if (createdOccasion) {
+        await prisma.reminder.create({
+          data: {
+            contactId: contact.id,
+            occasionId: createdOccasion.id,
+            type: occasionInput.type === "birthday" ? "birthday" : "custom",
+            dueDate: daysFromNow(occasionInput.daysFromNow - 1),
+            actionSuggestion: `Prepare gift/message for ${contact.name}'s upcoming ${occasionInput.type}. Prefer: ${occasionInput.giftPreference}`,
+            status: "pending",
+          }
+        });
       }
     }
-  });
+  }
 
   console.log(`Seed completed for user ${userId}. Created 20 contacts.`);
 }
