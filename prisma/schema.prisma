@@ -1,0 +1,191 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?   // Not used for Google OAuth but can be for credentials
+  accounts      Account[]
+  sessions      Session[]
+  contacts      Contact[]
+  advisorQueries AdvisorQuery[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Contact {
+  id                  String   @id @default(cuid())
+  userId              String
+  name                String
+  avatar              String?
+  email               String?
+  phone               String?
+  linkedinUrl         String?
+  facebookUrl         String?
+  otherSocials        Json?    // { [platform: string]: string }
+  category            Category // professional, personal, mentor, mentee, community, family
+  strength            Int      // 1-5
+  tags                String[] // []
+  loveLanguage        LoveLanguage? // gifts, words, time, acts, touch
+  loveLanguageDetails String? // e.g., "Thích nhận quà dịp sinh nhật"
+  expertiseTags       String[] // []
+  notes               Json?    // array of { date, content, type? }
+  lastContactAt       DateTime?
+  checkInFrequency    Int?     // days
+  relationshipHealthScore Float? // computed
+  isArchived          Boolean  @default(false)
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interactions        Interaction[]
+  occasions           Occasion[]
+  reminders           Reminder[]
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model Interaction {
+  id        String   @id @default(cuid())
+  contactId String
+  channel   Channel  // in-person, call, message, email, social
+  date      DateTime
+  summary   String?
+  mood      String?  // positive, neutral, negative
+  followUps Json?    // [{ text, done }]
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model Occasion {
+  id                 String   @id @default(cuid())
+  contactId          String
+  type               OccasionType // birthday, anniversary, work_anniversary, milestone, custom
+  name               String?  // Only for custom type
+  date               DateTime
+  recurring          Boolean  @default(false)
+  giftPreference     String?
+  reminderDaysBefore Int?
+  contact            Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  reminders          Reminder[]
+  createdAt          DateTime @default(now())
+}
+
+model Reminder {
+  id             String   @id @default(cuid())
+  contactId      String?
+  occasionId     String?
+  type           ReminderType // check_in, birthday, gift, custom
+  dueDate        DateTime
+  actionSuggestion String?
+  status         ReminderStatus @default(pending) // pending, done, snoozed
+  contact        Contact?  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  occasion       Occasion? @relation(fields: [occasionId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+}
+
+model AdvisorQuery {
+  id            String   @id @default(cuid())
+  userId        String
+  query         String
+  responseCount Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+
+enum Category {
+  professional
+  personal
+  mentor
+  mentee
+  community
+  family
+}
+
+enum LoveLanguage {
+  gifts
+  words
+  time
+  acts
+  touch
+}
+
+enum Channel {
+  in_person
+  call
+  message
+  email
+  social
+}
+
+enum OccasionType {
+  birthday
+  anniversary
+  work_anniversary
+  milestone
+  custom
+}
+
+enum ReminderType {
+  check_in
+  birthday
+  gift
+  custom
+}
+
+enum ReminderStatus {
+  pending
+  done
+  snoozed
+  dismissed
+}

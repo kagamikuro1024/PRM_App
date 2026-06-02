@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  app:
+    image: prm-app:latest
+    container_name: prm-app-prod
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      RUN_MIGRATIONS: "true"
+      RUN_SEED: "false"

@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: prm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: prm_user
+      POSTGRES_PASSWORD: prm_password
+      POSTGRES_DB: prm_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - prm_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prm_user -d prm_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: prm-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.docker
+    environment:
+      DATABASE_URL: postgresql://prm_user:prm_password@postgres:5432/prm_db?schema=public
+      DIRECT_URL: postgresql://prm_user:prm_password@postgres:5432/prm_db?schema=public
+      NEXTAUTH_URL: http://localhost:3000
+      RUN_MIGRATIONS: "true"
+      RUN_SEED: "false"
+
+volumes:
+  prm_postgres_data:
