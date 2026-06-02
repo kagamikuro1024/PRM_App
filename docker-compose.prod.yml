@@ -1,15 +1,15 @@
-version: '3.8'
-
 services:
   app:
-    image: prm-app:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
     container_name: prm-app-prod
     restart: unless-stopped
     ports:
       - "3000:3000"
     env_file:
-      - .env.production
+      - .env
     environment:
       NODE_ENV: production
-      RUN_MIGRATIONS: "true"
+      RUN_MIGRATIONS: "false"
       RUN_SEED: "false"
