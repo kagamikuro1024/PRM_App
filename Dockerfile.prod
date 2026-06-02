@@ -5,7 +5,6 @@ FROM node:20-alpine
 WORKDIR /app
 
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
@@ -15,7 +14,7 @@ RUN apk add --no-cache libc6-compat openssl
 # Copy package requirements
 COPY package.json package-lock.json ./
 
-# Install all dependencies directly in a single stage
+# Install ALL dependencies (including devDependencies) to build the app
 RUN npm ci
 
 # Copy the rest of the source code
@@ -24,6 +23,12 @@ COPY . .
 # Generate Prisma client and build Next.js
 RUN npx prisma generate
 RUN npm run build
+
+# Clean up devDependencies after build is done to save disk space
+RUN npm prune --omit=dev
+
+# Set NODE_ENV to production for runtime
+ENV NODE_ENV=production
 
 # Make sure entrypoint script is executable
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
